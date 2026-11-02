@@ -98,7 +98,7 @@ function kzS(){
 function kzItem(x){return{id:x.id,title:x.title,channel:x.channel,channelId:x.channelId,channelIcon:x.channelIcon,duration:x.duration,thumb:x.thumbnails?.medium?.url||x.thumbnails?.default?.url||kd(x.id)}}
 var kzLiveRef=null;
 const KZ_LIVEQ=[`ライブ配信`,`live`,`ライブ 24時間`,`ゲーム実況 ライブ`,`LIVE 配信中`];
-function kzLv(){return kzLiveRef||(kzLiveRef=B({items:[],loading:!1,qi:0}))}
+function kzLv(){return(kzLiveRef||(kzLiveRef=B({items:[],loading:!1,qi:0}))).value}
 function kzLiveN(x){
   if(!x)return!1;
   if(x.live||x.isLive===!0||x.streamStatus===`live`)return!0;
@@ -126,7 +126,7 @@ async function kzLiveEnsure(){
       const have=new Set(S.items.map(x=>x.id));
       for(const p of kzPairs(r)){
         if(p.n.type!==`video`||have.has(p.n.id)||kzRawShort(p.raw)||!kzLiveRaw(p))continue;
-        have.add(p.n.id),S.items.push({...p.n,live:!0})
+        have.add(p.n.id),S.items.push(Object.freeze({...p.n,live:!0}))
       }
     }
   }catch{}
@@ -175,7 +175,7 @@ async function kzLoad(append){
       }
       if(added>0||append)break
     }
-    kzMixLive(s),kzLiveEnsure(),s.token=token,s.items.length||(s.error=`ショートとして投稿された動画が見つかりませんでした（検索結果${seen}件、種類: ${kzTypes(all)}）。`),kzSave()
+    kzMixLive(s),s.token=token,s.items.length||(s.error=`ショートとして投稿された動画が見つかりませんでした（検索結果${seen}件、種類: ${kzTypes(all)}）。`),kzSave()
   }catch(e){
     if(seq!==kzSeq)return;
     s.error=e?.connectionFailure?e.message:`ショートの取得に失敗しました（${e?.code||e?.message||`不明なエラー`}）`
@@ -422,15 +422,15 @@ function kzMakeHome(){
       document.title=`KazukiTube - ホーム`;
       this.rz=()=>{const c=colsOf();(c.l!==this.cols.l||c.s!==this.cols.s)&&(this.cols=c)};
       window.addEventListener(`resize`,this.rz);
-      kzFill(this.needShorts()).then(()=>this.warm());
-      kzLiveEnsure();
-      this.fetchTrend().then(()=>this.ensureLong());
+      kzFill(this.needShorts(2)).then(()=>{this.warm();return new Promise(r=>setTimeout(r,500))}).then(()=>kzFill(this.needShorts()));
+      setTimeout(()=>kzLiveEnsure(),1500);
+      this.fetchTrend().then(()=>this.ensureLong(2)).then(()=>new Promise(r=>setTimeout(r,500))).then(()=>this.ensureLong());
       this.s.genre&&this.loadLong(!1)
     },
     beforeUnmount(){clearTimeout(this.preT),clearTimeout(this.warmT),this.rz&&window.removeEventListener(`resize`,this.rz)},
     methods:{
-      needShorts(){return this.blocks*2*this.cols.s},
-      needLong(){return this.cols.l*(1+4*(this.blocks-1))},
+      needShorts(b=this.blocks){return b*2*this.cols.s},
+      needLong(b=this.blocks){return this.cols.l*(1+4*(b-1))},
       pick(e){
         this.blocks=4,this.open=!1;
         const p=kzSetGenre(e);
@@ -442,7 +442,7 @@ function kzMakeHome(){
           const r=await fetch(TURL,{redirect:`follow`});
           if(!r.ok)throw Error(`x`);
           const t=await r.json();
-          this.trend={trending:t.trending||[],music:t.music||[],gaming:t.gaming||[]}
+          this.trend={trending:Object.freeze((t.trending||[]).slice(0,40)),music:Object.freeze((t.music||[]).slice(0,40)),gaming:Object.freeze((t.gaming||[]).slice(0,40))}
         }catch{this.terr=`動画を取得できませんでした`}
         finally{this.tload=!1}
       },
@@ -462,11 +462,12 @@ function kzMakeHome(){
         lv.forEach((x,i)=>{out.splice(Math.min(5+i*10,out.length),0,x)});
         return out
       },
-      async ensureLong(){
+      async ensureLong(b){
         if(this.fl)return;
         this.fl=!0;
         try{
-          for(let i=0;i<8&&this.longPool().length<this.needLong();i++){
+          const need=this.needLong(b||this.blocks);
+          for(let i=0;i<5&&this.longPool().length<need;i++){
             const g=this.s.genre,L=this.lg,n=L.items.length;
             if(g&&!L.token&&n)break;
             await this.loadLong(!0);
@@ -497,7 +498,7 @@ function kzMakeHome(){
             for(const p of kzPairs(r)){
               const x=p.n,c=kzSec(x.duration);
               if(x.type!==`video`||have.has(x.id)||kzRawShort(p.raw)||c>0&&c<=60)continue;
-              kzLiveRaw(p)&&(x.live=!0),have.add(x.id),added++,L.items.push(x)
+              kzLiveRaw(p)&&(x.live=!0),have.add(x.id),added++,L.items.push(Object.freeze(x))
             }
             if(!token)break
           }
