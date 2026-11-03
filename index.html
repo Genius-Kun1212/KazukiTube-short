@@ -105,7 +105,7 @@ function kzS(){
 function kzItem(x){return{id:x.id,title:x.title,channel:x.channel,channelId:x.channelId,channelIcon:x.channelIcon,duration:x.duration,thumb:x.thumbnails?.medium?.url||x.thumbnails?.default?.url||kd(x.id)}}
 var kzLiveRef=null;
 const KZ_LIVEQ=kzShuf([`ライブ配信`,`live`,`ライブ 24時間`,`ゲーム実況 ライブ`,`LIVE 配信中`]);
-function kzLv(){return kzLiveRef||(kzLiveRef=B({items:[],loading:!1,qi:0}))}
+function kzLv(){return(kzLiveRef||(kzLiveRef=B({items:[],loading:!1,qi:0}))).value}
 function kzLiveN(x){
   if(!x)return!1;
   if(x.live||x.isLive===!0||x.streamStatus===`live`)return!0;
@@ -162,12 +162,12 @@ async function kzLoad(append){
   const seq=append?kzSeq:++kzSeq;
   s.loading=!0,s.error=``;
   try{
-    const base=s.genre?s.genre+` `:kzTopic()+` `,qs=!fresh?[null]:append?[base+`#shorts`,base+`ショート`]:[base+`#shorts`,base+`shorts`,base+`ショート`],all=[];
+    const base=s.genre?s.genre+` `:kzTopic()+` `,qs=!fresh?[null]:append?[base+`#shorts`]:[base+`#shorts`,base+`shorts`,base+`ショート`],all=[];
     let seen=0,found=0,token=fresh?null:s.token;
     for(const q of qs){
       token=fresh?null:s.token;
       let first=fresh,added=0,tries=0;
-      while(tries<4&&(added<1||append&&added<8)){
+      while(tries<(append&&!s.genre?2:4)&&(added<1||append&&added<8)){
         tries++;
         const r=await fp(first?{query:q}:{query:``,token});
         if(seq!==kzSeq)return;
@@ -278,8 +278,12 @@ function kzMakeShorts(){
         const a=this.active,c=this.items[a];
         if(!c||this.dead)return;
         if(!c.live)try{await bp(c.id,{origin:`siatube`,retries:1,timeout:6e4})}catch{return}
-        const nx=k=>{const it=this.items[a+k];return it&&!it.live&&!this.dead&&this.active===a?kzPrefetch(it.id):Promise.resolve()};
-        await Promise.all([nx(1),nx(2)]),await nx(3)
+        for(const k of[1,2]){
+          const it=this.items[a+k];
+          if(!it||this.dead||this.active!==a)return;
+          if(it.live)continue;
+          await kzPrefetch(it.id)
+        }
       },
       go(e){
         const s=this.$refs.stage;
@@ -427,11 +431,12 @@ function kzMakeHome(){
       document.title=`KazukiTube - ホーム`;
       this.rz=()=>{const c=colsOf();(c.l!==this.cols.l||c.s!==this.cols.s)&&(this.cols=c)};
       window.addEventListener(`resize`,this.rz);
-      (this.s.genre?kzFill(this.needShorts()):kzFreshRec().then(()=>kzFill(this.needShorts()))).then(()=>this.warm());
+      const p0=this.s.genre?Promise.resolve():kzFreshRec().catch(()=>{});
+      (this.s.genre?kzFill(this.needShorts()):p0.then(()=>kzFill(this.needShorts()))).then(()=>this.warm());
       this.s.items.length&&this.warm();
       kzLiveEnsure();
-      this.fetchTrend().then(()=>this.ensureLong());
-      this.s.genre?this.loadLong(!1):this.ensureLong()
+      Promise.all([this.fetchTrend(),p0]).then(()=>this.ensureLong());
+      this.s.genre&&this.loadLong(!1)
     },
     beforeUnmount(){this.gone=!0,clearTimeout(this.preT),clearTimeout(this.warmT),this.rz&&window.removeEventListener(`resize`,this.rz)},
     methods:{
@@ -469,19 +474,20 @@ function kzMakeHome(){
             seen.add(x.id),out.push(x)
           }
         }
-        const have=new Set(out.map(x=>x.id)),lv=kzLv().items.filter(x=>!have.has(x.id));
-        lv.forEach((x,i)=>{out.splice(Math.min(5+i*10,out.length),0,x)});
+        try{const have=new Set(out.map(x=>x.id)),lv=kzLv().items.filter(x=>!have.has(x.id));
+        lv.forEach((x,i)=>{out.splice(Math.min(5+i*10,out.length),0,x)})}catch{}
         return out
       },
-      moreLong(){const L=this.lg,need=this.needLong();return this.longPool().length<need||!this.s.genre&&L.items.length<Math.ceil(need/3)},
+      moreLong(){const L=this.lg,need=this.needLong();return this.longPool().length<need||!this.s.genre&&L.items.length<12},
       async ensureLong(){
         if(this.fl)return;
         this.fl=!0;
         try{
-          for(let i=0;i<8&&this.moreLong();i++){
+          for(let i=0;i<(this.s.genre?8:3)&&this.moreLong();i++){
             const g=this.s.genre,L=this.lg,n=L.items.length;
             if(g&&!L.token&&n)break;
             await this.loadLong(!0);
+            if(L.error&&!L.items.length)break;
             if(this.s.genre!==g||g&&L.items.length===n)break
           }
         }finally{this.fl=!1}
@@ -517,7 +523,7 @@ function kzMakeHome(){
         finally{seq===this.seqL&&(L.loading=!1)}
         seq===this.seqL&&this.ensureLong()
       },
-      warm(){clearTimeout(this.warmT),this.warmT=setTimeout(async()=>{const s=kzS(),i0=Math.min(s.index||0,Math.max(0,s.items.length-1));for(let k=0;k<3;k++){if(this.gone)return;const it=s.items[i0+k];it&&!it.live&&await kzPrefetch(it.id,k>0)}},120)},
+      warm(){clearTimeout(this.warmT),this.warmT=setTimeout(async()=>{const s=kzS(),i0=Math.min(s.index||0,Math.max(0,s.items.length-1));for(let k=0;k<2;k++){if(this.gone)return;const it=s.items[i0+k];it&&!it.live&&await kzPrefetch(it.id,k>0)}},120)},
       openAt(e){const s=kzS();s.index=e,kzSave(),this.open=!0},
       hint(e,now){clearTimeout(this.preT),e.live||(this.preT=setTimeout(()=>kzPrefetch(e.id,!now),now?0:250))},
       more(){this.blocks+=3,kzFill(this.needShorts()),kzLiveEnsure(),this.ensureLong()}
